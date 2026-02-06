@@ -167,7 +167,7 @@ public class CodeAnalyzerService : ICodeAnalyzerService
 
     private string DetermineProjectType(string projectPath)
     {
-        if (File.Exists(Path.Combine(projectPath, "*.csproj")) || Directory.GetFiles(projectPath, "*.csproj").Any())
+        if (Directory.GetFiles(projectPath, "*.csproj").Any())
             return "C# / .NET";
         if (File.Exists(Path.Combine(projectPath, "setup.py")) || File.Exists(Path.Combine(projectPath, "pyproject.toml")))
             return "Python";
@@ -207,14 +207,12 @@ public class CodeAnalyzerService : ICodeAnalyzerService
         }
 
         // Exclude common directories
+        var excludedDirs = new[] { "node_modules", "bin", "obj", "dist", ".git", "__pycache__", "build" };
         files = files.Where(f => 
-            !f.Contains("node_modules") && 
-            !f.Contains("bin") && 
-            !f.Contains("obj") && 
-            !f.Contains("dist") && 
-            !f.Contains(".git") &&
-            !f.Contains("__pycache__") &&
-            !f.Contains("build")).ToList();
+        {
+            var pathParts = f.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return !pathParts.Any(part => excludedDirs.Contains(part, StringComparer.OrdinalIgnoreCase));
+        }).ToList();
 
         return files;
     }
