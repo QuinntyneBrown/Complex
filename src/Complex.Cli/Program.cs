@@ -1,5 +1,10 @@
-﻿using Complex.Cli.Commands;
+﻿using Complex.Abstractions;
+using Complex.Cli.Commands;
 using Complex.Cli.Services;
+using Complex.Plugin.Cpp;
+using Complex.Plugin.DotNet;
+using Complex.Plugin.Python;
+using Complex.Plugin.TypeScript;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.CommandLine;
@@ -13,6 +18,12 @@ services.AddLogging(builder =>
     builder.AddConsole();
     builder.SetMinimumLevel(LogLevel.Information);
 });
+
+// Add language analyzer plugins
+services.AddSingleton<ILanguageAnalyzerPlugin, DotNetAnalyzerPlugin>();
+services.AddSingleton<ILanguageAnalyzerPlugin, TypeScriptAnalyzerPlugin>();
+services.AddSingleton<ILanguageAnalyzerPlugin, PythonAnalyzerPlugin>();
+services.AddSingleton<ILanguageAnalyzerPlugin, CppAnalyzerPlugin>();
 
 // Add services
 services.AddSingleton<IRepositoryService, RepositoryService>();

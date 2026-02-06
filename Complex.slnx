@@ -1,5 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Complex.Cli/Complex.Cli.csproj" />
+    <Project Path="src/Complex.Abstractions/Complex.Abstractions.csproj" />
+    <Project Path="src/Complex.Plugin.DotNet/Complex.Plugin.DotNet.csproj" />
+    <Project Path="src/Complex.Plugin.TypeScript/Complex.Plugin.TypeScript.csproj" />
+    <Project Path="src/Complex.Plugin.Python/Complex.Plugin.Python.csproj" />
+    <Project Path="src/Complex.Plugin.Cpp/Complex.Plugin.Cpp.csproj" />
   </Folder>
 </Solution>

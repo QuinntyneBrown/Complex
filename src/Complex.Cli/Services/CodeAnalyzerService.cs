@@ -1,3 +1,4 @@
+using Complex.Abstractions;
 using Complex.Cli.Models;
 using Microsoft.Extensions.Logging;
 
@@ -11,10 +12,12 @@ public interface ICodeAnalyzerService
 public class CodeAnalyzerService : ICodeAnalyzerService
 {
     private readonly ILogger<CodeAnalyzerService> _logger;
+    private readonly IReadOnlyList<ILanguageAnalyzerPlugin> _plugins;
 
-    public CodeAnalyzerService(ILogger<CodeAnalyzerService> logger)
+    public CodeAnalyzerService(ILogger<CodeAnalyzerService> logger, IEnumerable<ILanguageAnalyzerPlugin> plugins)
     {
         _logger = logger;
+        _plugins = plugins.ToList();
     }
 
     public async Task<RepositoryAnalysis> AnalyzeRepositoryAsync(string repositoryPath, string repositoryUrl, CancellationToken cancellationToken = default)
@@ -28,12 +31,12 @@ public class CodeAnalyzerService : ICodeAnalyzerService
             AnalysisDate = DateTime.UtcNow
         };
 
-        // Find all projects in the repository
-        var projects = await FindProjectsAsync(repositoryPath, cancellationToken);
-        
-        foreach (var projectPath in projects)
+        // Discover all projects via plugins
+        var projects = DiscoverAllProjects(repositoryPath);
+
+        foreach (var descriptor in projects)
         {
-            var projectAnalysis = await AnalyzeProjectAsync(repositoryPath, projectPath, cancellationToken);
+            var projectAnalysis = await AnalyzeProjectAsync(repositoryPath, descriptor, cancellationToken);
             if (projectAnalysis != null)
             {
                 analysis.Projects.Add(projectAnalysis);
@@ -43,7 +46,7 @@ public class CodeAnalyzerService : ICodeAnalyzerService
         // Calculate overall metrics
         analysis.TotalComplexityScore = analysis.Projects.Sum(p => p.ComplexityScore);
         analysis.TotalEstimatedTeamSize = analysis.Projects.Sum(p => p.EstimatedTeamSize);
-        
+
         // Aggregate file types
         foreach (var project in analysis.Projects)
         {
@@ -72,39 +75,32 @@ public class CodeAnalyzerService : ICodeAnalyzerService
         return analysis;
     }
 
-    private async Task<List<string>> FindProjectsAsync(string repositoryPath, CancellationToken cancellationToken)
+    private List<LanguageProjectDescriptor> DiscoverAllProjects(string repositoryPath)
     {
-        var projects = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<LanguageProjectDescriptor>();
 
-        // Find .NET projects
-        var csprojFiles = Directory.GetFiles(repositoryPath, "*.csproj", SearchOption.AllDirectories);
-        projects.AddRange(csprojFiles.Select(Path.GetDirectoryName).Where(p => p != null).Cast<string>());
+        foreach (var plugin in _plugins)
+        {
+            foreach (var descriptor in plugin.DiscoverProjects(repositoryPath))
+            {
+                if (seen.Add(descriptor.ProjectPath))
+                {
+                    results.Add(descriptor);
+                }
+            }
+        }
 
-        // Find Python projects
-        var pythonProjects = Directory.GetFiles(repositoryPath, "setup.py", SearchOption.AllDirectories)
-            .Concat(Directory.GetFiles(repositoryPath, "pyproject.toml", SearchOption.AllDirectories))
-            .Concat(Directory.GetFiles(repositoryPath, "requirements.txt", SearchOption.AllDirectories));
-        projects.AddRange(pythonProjects.Select(Path.GetDirectoryName).Where(p => p != null).Cast<string>().Distinct());
-
-        // Find C++ projects
-        var cppProjects = Directory.GetFiles(repositoryPath, "CMakeLists.txt", SearchOption.AllDirectories)
-            .Concat(Directory.GetFiles(repositoryPath, "Makefile", SearchOption.AllDirectories));
-        projects.AddRange(cppProjects.Select(Path.GetDirectoryName).Where(p => p != null).Cast<string>().Distinct());
-
-        // Find Angular/TypeScript projects
-        var angularProjects = Directory.GetFiles(repositoryPath, "angular.json", SearchOption.AllDirectories)
-            .Concat(Directory.GetFiles(repositoryPath, "package.json", SearchOption.AllDirectories));
-        projects.AddRange(angularProjects.Select(Path.GetDirectoryName).Where(p => p != null).Cast<string>().Distinct());
-
-        return await Task.FromResult(projects.Distinct().ToList());
+        return results;
     }
 
-    private async Task<ProjectAnalysis?> AnalyzeProjectAsync(string repositoryPath, string projectPath, CancellationToken cancellationToken)
+    private async Task<ProjectAnalysis?> AnalyzeProjectAsync(string repositoryPath, LanguageProjectDescriptor descriptor, CancellationToken cancellationToken)
     {
         try
         {
+            var projectPath = descriptor.ProjectPath;
+            var projectType = descriptor.ProjectType;
             var projectName = Path.GetFileName(projectPath) ?? "Unknown";
-            var projectType = DetermineProjectType(projectPath);
 
             _logger.LogInformation("Analyzing project {ProjectName} of type {ProjectType}", projectName, projectType);
 
@@ -160,39 +156,17 @@ public class CodeAnalyzerService : ICodeAnalyzerService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to analyze project at {ProjectPath}", projectPath);
+            _logger.LogError(ex, "Failed to analyze project at {ProjectPath}", descriptor.ProjectPath);
             return null;
         }
-    }
-
-    private string DetermineProjectType(string projectPath)
-    {
-        if (Directory.GetFiles(projectPath, "*.csproj").Any())
-            return "C# / .NET";
-        if (File.Exists(Path.Combine(projectPath, "setup.py")) || File.Exists(Path.Combine(projectPath, "pyproject.toml")))
-            return "Python";
-        if (File.Exists(Path.Combine(projectPath, "CMakeLists.txt")) || File.Exists(Path.Combine(projectPath, "Makefile")))
-            return "C++";
-        if (File.Exists(Path.Combine(projectPath, "angular.json")))
-            return "Angular / TypeScript";
-        if (File.Exists(Path.Combine(projectPath, "package.json")))
-            return "TypeScript / JavaScript";
-        
-        return "Unknown";
     }
 
     private List<string> GetProjectFiles(string projectPath, string projectType)
     {
         var files = new List<string>();
-        var extensions = projectType switch
-        {
-            "C# / .NET" => new[] { "*.cs", "*.csproj", "*.sln", "*.json", "*.xml" },
-            "Python" => new[] { "*.py", "*.pyx", "*.pyd", "*.txt", "*.toml", "*.cfg" },
-            "C++" => new[] { "*.cpp", "*.h", "*.hpp", "*.c", "*.cc", "*.cxx" },
-            "Angular / TypeScript" => new[] { "*.ts", "*.js", "*.html", "*.css", "*.scss", "*.json" },
-            "TypeScript / JavaScript" => new[] { "*.ts", "*.js", "*.jsx", "*.tsx", "*.json" },
-            _ => new[] { "*.*" }
-        };
+
+        // Get extensions from the plugin that handles this project type
+        var extensions = GetExtensionsForProjectType(projectType);
 
         foreach (var extension in extensions)
         {
@@ -206,9 +180,16 @@ public class CodeAnalyzerService : ICodeAnalyzerService
             }
         }
 
-        // Exclude common directories
-        var excludedDirs = new[] { "node_modules", "bin", "obj", "dist", ".git", "__pycache__", "build" };
-        files = files.Where(f => 
+        // Core excluded directories
+        var excludedDirs = new List<string> { "node_modules", "bin", "obj", "dist", ".git", "__pycache__", "build" };
+
+        // Add plugin-specific excluded directories
+        foreach (var plugin in _plugins)
+        {
+            excludedDirs.AddRange(plugin.GetAdditionalExcludedDirectories());
+        }
+
+        files = files.Where(f =>
         {
             var pathParts = f.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             return !pathParts.Any(part => excludedDirs.Contains(part, StringComparer.OrdinalIgnoreCase));
@@ -217,50 +198,39 @@ public class CodeAnalyzerService : ICodeAnalyzerService
         return files;
     }
 
+    private IReadOnlyList<string> GetExtensionsForProjectType(string projectType)
+    {
+        foreach (var plugin in _plugins)
+        {
+            var extensions = plugin.GetFileExtensions(projectType);
+            if (extensions.Count > 0)
+            {
+                return extensions;
+            }
+        }
+
+        return new[] { "*.*" };
+    }
+
     private List<string> DetermineTechnologies(string projectPath, string projectType)
     {
         var technologies = new List<string> { projectType };
 
-        // Check for specific technology indicators
+        // Cross-cutting technology detection (stays in core)
         if (File.Exists(Path.Combine(projectPath, "Dockerfile")))
             technologies.Add("Docker");
-        
+
         if (File.Exists(Path.Combine(projectPath, ".github", "workflows")))
             technologies.Add("GitHub Actions");
-        
+
         if (Directory.Exists(Path.Combine(projectPath, ".azure")))
             technologies.Add("Azure");
 
-        if (projectType == "C# / .NET")
+        // Delegate language-specific technology detection to plugins
+        foreach (var plugin in _plugins)
         {
-            var csprojFiles = Directory.GetFiles(projectPath, "*.csproj", SearchOption.AllDirectories);
-            foreach (var csproj in csprojFiles)
-            {
-                var content = File.ReadAllText(csproj);
-                if (content.Contains("Microsoft.AspNetCore"))
-                    technologies.Add("ASP.NET Core");
-                if (content.Contains("Microsoft.EntityFrameworkCore"))
-                    technologies.Add("Entity Framework Core");
-                if (content.Contains("xunit") || content.Contains("NUnit") || content.Contains("MSTest"))
-                    technologies.Add("Unit Testing");
-            }
-        }
-
-        if (projectType.Contains("TypeScript") || projectType.Contains("Angular"))
-        {
-            var packageJsonPath = Path.Combine(projectPath, "package.json");
-            if (File.Exists(packageJsonPath))
-            {
-                var content = File.ReadAllText(packageJsonPath);
-                if (content.Contains("@angular/core"))
-                    technologies.Add("Angular");
-                if (content.Contains("react"))
-                    technologies.Add("React");
-                if (content.Contains("vue"))
-                    technologies.Add("Vue.js");
-                if (content.Contains("jest") || content.Contains("jasmine") || content.Contains("karma"))
-                    technologies.Add("JavaScript Testing");
-            }
+            var pluginTechnologies = plugin.DetectTechnologies(projectPath, projectType);
+            technologies.AddRange(pluginTechnologies);
         }
 
         return technologies.Distinct().ToList();
@@ -287,7 +257,7 @@ public class CodeAnalyzerService : ICodeAnalyzerService
     {
         // Basic formula: 1 developer per 10,000 lines of code
         // Adjusted by complexity factors
-        
+
         int baseTeamSize = analysis.TotalLines / 10000;
         if (baseTeamSize == 0) baseTeamSize = 1;
 
