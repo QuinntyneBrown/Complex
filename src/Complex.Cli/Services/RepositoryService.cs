@@ -1,4 +1,4 @@
-using LibGit2Sharp;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace Complex.Cli.Services;
@@ -18,25 +18,45 @@ public class RepositoryService : IRepositoryService
         _logger = logger;
     }
 
-    public Task<string> CloneRepositoryAsync(string repositoryUrl, CancellationToken cancellationToken = default)
+    public async Task<string> CloneRepositoryAsync(string repositoryUrl, CancellationToken cancellationToken = default)
     {
-        return Task.Run(() =>
-        {
-            var tempPath = Path.Combine(Path.GetTempPath(), $"complex-analysis-{Guid.NewGuid()}");
-            _logger.LogInformation("Cloning repository {RepositoryUrl} to {TempPath}", repositoryUrl, tempPath);
+        var tempPath = Path.Combine(Path.GetTempPath(), $"complex-analysis-{Guid.NewGuid()}");
+        _logger.LogInformation("Cloning repository {RepositoryUrl} to {TempPath}", repositoryUrl, tempPath);
 
-            try
+        try
+        {
+            var process = new Process
             {
-                Repository.Clone(repositoryUrl, tempPath);
-                _logger.LogInformation("Repository cloned successfully to {TempPath}", tempPath);
-                return tempPath;
-            }
-            catch (Exception ex)
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = $"clone {repositoryUrl} {tempPath}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+
+            var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
+
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (process.ExitCode != 0)
             {
-                _logger.LogError(ex, "Failed to clone repository {RepositoryUrl}", repositoryUrl);
-                throw;
+                throw new InvalidOperationException($"git clone failed with exit code {process.ExitCode}: {stderr}");
             }
-        }, cancellationToken);
+
+            _logger.LogInformation("Repository cloned successfully to {TempPath}", tempPath);
+            return tempPath;
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException)
+        {
+            _logger.LogError(ex, "Failed to clone repository {RepositoryUrl}", repositoryUrl);
+            throw;
+        }
     }
 
     public void CleanupRepository(string path)

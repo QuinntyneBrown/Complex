@@ -86,7 +86,7 @@ The tool is built with:
 - **Microsoft.Extensions.Logging**: Structured logging
 - **Microsoft.Extensions.Hosting**: Application hosting and lifetime management
 - **Microsoft.Extensions.Configuration**: Configuration management
-- **LibGit2Sharp**: Git repository operations
+- **Git CLI**: Git repository operations via command-line
 
 ### Project Structure
 

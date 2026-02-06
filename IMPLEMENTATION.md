@@ -8,7 +8,7 @@ Successfully implemented a comprehensive CLI application for analyzing code repo
 
 ### 1. CLI Application Architecture
 - **Technology Stack**: System.CommandLine + Microsoft.Extensions (DI, Logging, Configuration)
-- **Git Integration**: LibGit2Sharp for repository cloning
+- **Git Integration**: Git CLI for repository cloning
 - **Structure**: Commands, Services, Models pattern
 
 ### 2. Key Features
@@ -156,7 +156,7 @@ Technologies: ASP.NET Core, C# / .NET, C++, Docker, TypeScript...
 1. **File-per-command pattern**: Aligns with the requirement for "file per command"
 2. **Microsoft.Extensions**: Used for DI, Logging, and Configuration as required
 3. **System.CommandLine**: Modern CLI framework with rich features
-4. **LibGit2Sharp**: Reliable git operations without external dependencies
+4. **Git CLI**: Git operations via command-line process execution
 5. **Markdown reports**: Human-readable, version-control friendly format
 6. **Temporary clones**: Clean up after analysis to save disk space
 7. **Path segment filtering**: Avoids false positives in path exclusion
@@ -176,7 +176,7 @@ Technologies: ASP.NET Core, C# / .NET, C++, Docker, TypeScript...
 Using the tool's own metrics:
 - **Files**: 12
 - **Lines of Code**: ~1,000
-- **Technologies**: System.CommandLine, Microsoft.Extensions, LibGit2Sharp
+- **Technologies**: System.CommandLine, Microsoft.Extensions, Git CLI
 - **Complexity Score**: ~35 (Low-Medium)
 - **Team Size**: 1 developer (appropriate for this scope)
 
